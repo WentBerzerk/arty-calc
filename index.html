@@ -1,0 +1,266 @@
+<html>
+	<head>
+		<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
+	</head>
+	<div class="container-fluid">
+		<h1>Foxhole Artillery Calculator</h1>
+		<br>
+		<h4>Location</h4>
+		<select id="hex-select" class="form-select" onchange="changeHex(true)">
+			<option value="MapAllodsBightHex.jpg">Allod's Bight</option>
+			<option value="MapCallahansPassageHex.jpg">Callahan's Passage</option>
+			<option value="MapDeadlandsHex.jpg">Deadlands</option>
+			<option value="MapDrownedValeHex.jpg">Drowned Vale</option>
+			<option value="MapEndlessShoreHex.jpg">Endless Shore</option>
+			<option value="MapFarranacCoastHex.jpg">Farranac Coast</option>
+			<option value="MapFishermansRowHex.jpg">Fisherman's Row</option>
+			<option value="MapGodcroftsHex.jpg">Godcrofts</option>
+			<option value="MapGreatMarchHex.jpg">Great March</option>
+			<option value="MapHeartlandsHex.jpg">Heartlands</option>
+			<option value="MapLinnMercyHex.jpg">Linn of Mercy</option>
+			<option value="MapLochMorHex.jpg">Loch Mor</option>
+			<option value="MapMarbanHollow.jpg">Marban Hollow</option>
+			<option value="MapMooringCountyHex.jpg">Moors</option>
+			<option value="MapOarbreakerHex.jpg">Oarbreaker Isles</option>
+			<option value="MapReachingTrailHex.jpg">Reaching Trail</option>
+			<option value="MapShackledChasmHex.jpg">Shackled Chasm</option>
+			<option value="MapStonecradleHex.jpg">Stonecradle</option>
+			<option value="MapTempestIslandHex.jpg">Tempest Island</option>
+			<option value="MapUmbralWildwoodHex.jpg">Umbral Wildwood</option>
+			<option value="MapViperPitHex.jpg">Viper Pit</option>
+			<option value="MapWeatheredExpanseHex.jpg">Weathered Expanse</option>
+			<option value="MapWestgateHex.jpg">Westgate</option>
+		</select>
+		<br>
+		<button class="btn btn-primary" value="artillery" onclick="startMarking(this.value)">Mark Artillery Location</button>
+		<button class="btn btn-danger" value="target" onclick="startMarking(this.value)">Mark Target Location</button>
+
+		<br><br>
+
+		<h3>Distance: <span id="distance-text" style="font-weight: bold;"></span></h3>
+		<h3>Azimuth: <span id="azimuth-text" style="font-weight: bold;"></span></h3>
+		<br>
+
+		<canvas id="canvas" width="1024" height="888"></canvas>
+		<img id="hex" src="images/maps/MapAllodsBightHex.jpg">
+
+		<!-- hidden elements -->
+		<img id="artillery-marker" src="images/artillery_marker.png">
+		<img id="artillery-marker-transparent" src="images/artillery_marker_transparent.png">
+		<img id="target-marker" src="images/target_marker.png">
+		<img id="target-marker-transparent" src="images/target_marker_transparent.png">
+	</div>
+</html>
+
+<style type="text/css">
+	canvas {
+		position: absolute;
+		z-index: 1;
+	}
+
+	#canvas, #hex {
+		position: absolute;
+		clip-path: polygon(25% 0, 75% 0, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+	}
+
+	#hex-select {
+		width: 200px;
+	}
+
+	#artillery-marker, #artillery-marker-transparent, #target-marker, #target-marker-transparent {
+		display: none;
+		position: absolute;
+	}
+
+	.btn {
+		width: 200px;
+	}
+</style>
+
+<script type="text/javascript">
+
+	// global variables
+		var markerImageHalfWidth = 9;
+		var markerImageHeight = 28;
+
+		var isSettingMarker = false;
+		var markerType = "artillery";
+
+		var artilleryCoords = null;
+		var targetCoords = null;
+
+		var canvas = document.getElementById("canvas");
+		var ctx = canvas.getContext("2d");
+
+		// initialized in loadPage()
+		var canvasTop;
+		var canvasLeft;
+
+	// page load
+		window.onload = loadPage();
+
+		function loadPage() {
+			let hexPosition = document.getElementById("hex").getBoundingClientRect();
+
+			canvas.style.top = hexPosition.top;
+			canvas.style.left = hexPosition.left;
+
+			canvasTop = parseInt(canvas.style.top, 10);
+			canvasLeft = parseInt(canvas.style.left, 10);
+
+			if(localStorage.getItem("hex")) {
+				document.getElementById("hex-select").value = localStorage.getItem("hex");
+				changeHex(false);
+			}
+			if(localStorage.getItem("artilleryCoords")) {
+				artilleryCoords = JSON.parse(localStorage.getItem("artilleryCoords"))
+				setMarkerPosition("artillery");
+			}
+			if(localStorage.getItem("targetCoords")) {
+				targetCoords = JSON.parse(localStorage.getItem("targetCoords"));
+				setMarkerPosition("target");
+			}
+
+			drawLine();
+		}
+
+	// event listeners
+		canvas.addEventListener('mousemove', e => {
+			if(isSettingMarker) {
+				switch (markerType) {
+					case "artillery":
+						let artilleryMarkerTransparent = document.getElementById("artillery-marker-transparent");
+						artilleryMarkerTransparent.style.left = e.clientX - markerImageHalfWidth + window.scrollX;
+						artilleryMarkerTransparent.style.top = e.clientY - markerImageHeight + window.scrollY;
+						break;
+
+					case "target":
+						let targetMarkerTransparent = document.getElementById("target-marker-transparent");
+						targetMarkerTransparent.style.left = e.clientX - markerImageHalfWidth + window.scrollX;
+						targetMarkerTransparent.style.top = e.clientY - markerImageHeight + window.scrollY;
+						break;
+				}
+			}
+		});
+
+		canvas.addEventListener('mousedown', e => {
+			if(isSettingMarker) {
+				let canvasTop = parseInt(canvas.style.top, 10);
+				let canvasLeft = parseInt(canvas.style.left, 10);
+
+				switch (markerType) {
+					case "artillery":
+						artilleryCoords = [e.clientX - canvasLeft + window.scrollX, e.clientY - canvasTop + window.scrollY];
+						localStorage.setItem("artilleryCoords", JSON.stringify(artilleryCoords))
+
+						let artilleryMarkerTransparent = document.getElementById("artillery-marker-transparent")
+						artilleryMarkerTransparent.style.display = "none";
+
+						setMarkerPosition("artillery");
+
+						isSettingMarker = false;
+						break;
+
+					case "target":
+						targetCoords = [e.clientX - canvasLeft + window.scrollX, e.clientY - canvasTop + window.scrollY];
+						localStorage.setItem("targetCoords", JSON.stringify(targetCoords));
+
+						let targetMarkerTransparent = document.getElementById("target-marker-transparent")
+						targetMarkerTransparent.style.display = "none";
+
+						setMarkerPosition("target");
+
+						isSettingMarker = false;
+						break;
+				}
+
+				drawLine();
+			}
+		});
+
+		// window.addEventListener('scroll', e => {
+		// 	console.log(window.scrollX)
+		// });
+
+	// specific-case functions
+		function changeHex(clearStorage) {
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+			artilleryCoords = null;
+			targetCoords = null;
+
+			let hexSelect = document.getElementById("hex-select");
+			document.getElementById("hex").src = "images/maps/" + hexSelect.value;
+			document.getElementById("artillery-marker").style = "none";
+			document.getElementById("target-marker").style = "none";
+
+			if(clearStorage) {
+				localStorage.clear();
+			}
+			localStorage.setItem("hex", hexSelect.value);
+		}
+
+		function setMarkerPosition(type) {
+			let marker = document.getElementById(type + "-marker");
+			marker.style.display = "block";
+
+			let coords;
+			switch(type) {
+				case "artillery":
+					coords = artilleryCoords;
+					break;
+				case "target":
+					coords = targetCoords;
+					break;
+			}
+
+			marker.style.left = coords[0] + canvasLeft - markerImageHalfWidth;
+			marker.style.top = coords[1] + canvasTop - markerImageHeight;
+		}
+
+		function startMarking(type) {
+			let artilleryMarkerTransparent = document.getElementById("artillery-marker-transparent");
+			let targetMarkerTransparent = document.getElementById("target-marker-transparent");
+
+			artilleryMarkerTransparent.style.display = "none";
+			targetMarkerTransparent.style.display = "none";
+
+			isSettingMarker = true;
+			markerType = type;
+
+			switch (type) {
+				case "artillery":
+					artilleryMarkerTransparent.style.display = "block";
+					break;
+
+				case "target":
+					targetMarkerTransparent.style.display = "block";
+					break;
+			}
+		}
+
+		function drawLine() {
+				if(artilleryCoords != null && targetCoords != null) {
+
+					ctx.clearRect(0, 0, canvas.width, canvas.height);
+					ctx.beginPath();
+					ctx.moveTo(artilleryCoords[0], artilleryCoords[1]);
+					ctx.lineTo(targetCoords[0], targetCoords[1]);
+					ctx.stroke();
+
+					let distanceX = targetCoords[0] - artilleryCoords[0];
+					let distanceY = -(targetCoords[1] - artilleryCoords[1]);
+
+					let distance =  Math.sqrt(distanceX**2 + distanceY**2) * 2.14527027027; // 2.14527027027 is the pixel-to-grid ratio
+
+					// https://en.wikipedia.org/wiki/Azimuth#In_cartography
+					let azimuth = (180/Math.PI) * (Math.atan2(distanceX, distanceY));
+					if(azimuth < 0) {
+						azimuth += 360;
+					}
+					
+					document.getElementById("distance-text").textContent = Math.round(distance) + "m";
+					document.getElementById("azimuth-text").textContent = azimuth.toFixed(1) + "°";
+				}
+			}
+</script>
